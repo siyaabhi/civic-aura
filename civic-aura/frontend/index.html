@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Civic Aura — Kerala</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0d0f0b;
+    --panel: #15180f;
+    --line: #2a2e21;
+    --text: #eef0e6;
+    --text-dim: #9aa08c;
+    --lime: #c8ff4d;
+    --lime-dim: #4c5c1f;
+    --red: #ff5c72;
+    --red-dim: #4a1f27;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, .display {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  header {
+    padding: 28px 32px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  header h1 span { color: var(--lime); }
+  header p {
+    margin: 4px 0 0;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 1px;
+    background: var(--line);
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  section {
+    background: var(--bg);
+    padding: 24px 32px;
+  }
+
+  #map {
+    height: 460px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    filter: grayscale(0.4) brightness(0.85);
+  }
+  .map-caption {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .leaderboard h2 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0 0 16px;
+    font-weight: 500;
+  }
+  .lb-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .lb-rank {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .lb-name { font-size: 15px; font-weight: 500; }
+  .lb-tag { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .lb-aura {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    text-align: right;
+  }
+  .lb-aura.up { color: var(--lime); }
+  .lb-aura.down { color: var(--red); }
+  .lb-delta { font-size: 11px; font-weight: 400; display: block; text-align: right; }
+
+  .feed {
+    margin-top: 28px;
+  }
+  .feed h2 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0 0 12px;
+    font-weight: 500;
+  }
+  .feed-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    align-items: flex-start;
+  }
+  .feed-pill {
+    flex-shrink: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .feed-pill.w { background: var(--lime-dim); color: var(--lime); }
+  .feed-pill.l { background: var(--red-dim); color: var(--red); }
+  .feed-text { color: var(--text); }
+  .feed-loc { color: var(--text-dim); }
+
+  footer {
+    padding: 20px 32px 32px;
+    color: var(--text-dim);
+    font-size: 12px;
+    border-top: 1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Civic <span>Aura</span></h1>
+    <p>What's your area's Aura? — a live civic reputation map of Kerala</p>
+  </div>
+  <p class="map-caption" style="margin:0;">Demo data — connect to the backend in Phase 8</p>
+</header>
+
+<main>
+  <section>
+    <div id="map"></div>
+    <p class="map-caption">Marker size and color reflect a locality's current Aura. Tap a marker for detail.</p>
+  </section>
+
+  <section>
+    <div class="leaderboard">
+      <h2>Leaderboard</h2>
+      <div id="lb-list"></div>
+    </div>
+
+    <div class="feed">
+      <h2>Recent reports</h2>
+      <div id="feed-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Civic Aura — built one commit at a time. This page uses placeholder data; wire it to your FastAPI
+  backend's <code>/localities</code> and <code>/leaderboard</code> endpoints once Phase 4 is done.
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+  // --- Placeholder data (replace with fetch() calls to your backend in Phase 8) ---
+  const localities = [
+    { name: "Fort Kochi", district: "Ernakulam", lat: 9.9658, lng: 76.2422, aura: 210, delta: 12 },
+    { name: "Kakkanad",   district: "Ernakulam", lat: 10.0159, lng: 76.3419, aura: 120, delta: -4 },
+    { name: "Edappally",  district: "Ernakulam", lat: 10.0270, lng: 76.3082, aura: 95,  delta: 7  },
+  ];
+
+  const feed = [
+    { win: true,  text: "Clean public bins in", locality: "Fort Kochi" },
+    { win: false, text: "Improper parking near junction in", locality: "Kakkanad" },
+    { win: true,  text: "Proper waste segregation spotted in", locality: "Edappally" },
+  ];
+
+  // --- Map setup ---
+  const map = L.map('map', { zoomControl: true }).setView([10.02, 76.30], 11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    maxZoom: 18,
+  }).addTo(map);
+
+  localities.forEach(loc => {
+    const radius = 8 + Math.sqrt(loc.aura);
+    const color = loc.delta >= 0 ? '#c8ff4d' : '#ff5c72';
+    L.circleMarker([loc.lat, loc.lng], {
+      radius: radius,
+      color: color,
+      weight: 1,
+      fillColor: color,
+      fillOpacity: 0.35,
+    })
+      .addTo(map)
+      .bindPopup(`<strong>${loc.name}</strong><br/>Aura: ${loc.aura} (${loc.delta >= 0 ? '+' : ''}${loc.delta} today)`);
+  });
+
+  // --- Leaderboard ---
+  const lbList = document.getElementById('lb-list');
+  [...localities]
+    .sort((a, b) => b.aura - a.aura)
+    .forEach((loc, i) => {
+      const up = loc.delta >= 0;
+      const row = document.createElement('div');
+      row.className = 'lb-row';
+      row.innerHTML = `
+        <span class="lb-rank">${i + 1}</span>
+        <span>
+          <div class="lb-name">${loc.name}</div>
+          <div class="lb-tag">${loc.district}</div>
+        </span>
+        <span class="lb-aura ${up ? 'up' : 'down'}">
+          ${loc.aura}
+          <span class="lb-delta">${up ? '+' : ''}${loc.delta} today</span>
+        </span>`;
+      lbList.appendChild(row);
+    });
+
+  // --- Recent report feed ---
+  const feedList = document.getElementById('feed-list');
+  feed.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'feed-item';
+    row.innerHTML = `
+      <span class="feed-pill ${item.win ? 'w' : 'l'}">${item.win ? 'W' : 'L'}</span>
+      <span class="feed-text">${item.text} <span class="feed-loc">${item.locality}</span></span>`;
+    feedList.appendChild(row);
+  });
+</script>
+
+</body>
+</html>
