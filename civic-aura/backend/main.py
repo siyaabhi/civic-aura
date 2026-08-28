@@ -64,8 +64,25 @@ def get_localities():
     return [dict(row) for row in rows]
 
 
+@app.get("/localities/{locality_id}")
+def get_locality(locality_id: int):
+    """
+    Returns one locality's full detail by its id.
+    Try locality_id = 1, 2, or 3 in the docs page (those are your sample rows).
+    """
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT * FROM localities WHERE id = ?", (locality_id,)
+    ).fetchone()
+    conn.close()
+
+    if row is None:
+        return {"error": f"No locality found with id {locality_id}"}
+
+    return dict(row)
+
+
 # --- Phase 4 will add more endpoints below this line, e.g.: ---
 #
-# @app.get("/localities/{locality_id}")
 # @app.post("/reports")
 # @app.get("/leaderboard")
