@@ -18,6 +18,22 @@ import sqlite3
 import os
 
 from fastapi import FastAPI
+from pydantic import BaseModel
+
+
+class ReportIn(BaseModel):
+    """
+    Describes exactly what shape of data POST /reports expects.
+    FastAPI uses this to auto-validate incoming requests — if someone sends
+    the wrong type (e.g. text instead of a number for lat), it rejects it
+    automatically before your code even runs.
+    """
+    locality_id: int
+    category: str
+    is_positive: bool
+    photo_url: str
+    lat: float
+    lng: float
 
 app = FastAPI(title="Civic Aura API")
 
@@ -103,6 +119,52 @@ def get_leaderboard():
     return leaderboard
 
 
-# --- Phase 4 will add more endpoints below this line, e.g.: ---
-#
-# @app.post("/reports")
+@app.post("/reports")
+def create_report(report: ReportIn):
+    """
+    Saves a new report and updates the locality's Aura.
+    NOTE: no AI moderation or duplicate check yet — that comes in Phases 6 and 7.
+    For now this just proves the full read-and-write cycle works end to end.
+    """
+    conn = get_db_connection()
+
+    # Make sure the locality actually exists before we do anything else.
+    locality = conn.execute(
+        "SELECT * FROM localities WHERE id = ?", (report.locality_id,)
+    ).fetchone()
+    if locality is None:
+        conn.close()
+        return {"error": f"No locality found with id {report.locality_id}"}
+
+    # 1. Insert the report itself, marked 'approved' for now (Phase 6 will make this conditional).
+    cursor = conn.execute(
+        """
+        INSERT INTO reports (locality_id, category, is_positive, photo_url, lat, lng, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'approved')
+        """,
+        (report.locality_id, report.category, report.is_positive, report.photo_url, report.lat, report.lng),
+    )
+    report_id = cursor.lastrowid
+
+    # 2. Work out the Aura change: +1 for positive, -1 for negative, never below 0.
+    change = 1 if report.is_positive else -1
+    new_aura = max(0, locality["aura"] + change)
+
+    conn.execute("UPDATE localities SET aura = ? WHERE id = ?", (new_aura, report.locality_id))
+
+    # 3. Log the change in aura_history so we have a running record.
+    conn.execute(
+        "INSERT INTO aura_history (locality_id, report_id, change, new_total) VALUES (?, ?, ?, ?)",
+        (report.locality_id, report_id, change, new_aura),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "report_id": report_id,
+        "locality": locality["name"],
+        "change": change,
+        "new_aura": new_aura,
+        "message": "W report 🔥 Aura updated" if report.is_positive else "Nah bro… that's an L 💀 −1 Aura",
+    }
