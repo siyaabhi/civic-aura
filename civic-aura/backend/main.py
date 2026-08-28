@@ -82,7 +82,27 @@ def get_locality(locality_id: int):
     return dict(row)
 
 
+@app.get("/leaderboard")
+def get_leaderboard():
+    """
+    Returns localities ranked highest Aura first, with a 'rank' number added.
+    This is what will power the leaderboard UI in the frontend.
+    """
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, name, district, aura FROM localities ORDER BY aura DESC"
+    ).fetchall()
+    conn.close()
+
+    leaderboard = []
+    for rank, row in enumerate(rows, start=1):
+        entry = dict(row)
+        entry["rank"] = rank
+        leaderboard.append(entry)
+
+    return leaderboard
+
+
 # --- Phase 4 will add more endpoints below this line, e.g.: ---
 #
 # @app.post("/reports")
-# @app.get("/leaderboard")
