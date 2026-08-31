@@ -16,6 +16,7 @@ As you complete later phases, you'll add:
 
 import sqlite3
 import os
+import math
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -24,11 +25,9 @@ from pydantic import BaseModel
 class ReportIn(BaseModel):
     """
     Describes exactly what shape of data POST /reports expects.
-    FastAPI uses this to auto-validate incoming requests — if someone sends
-    the wrong type (e.g. text instead of a number for lat), it rejects it
-    automatically before your code even runs.
+    Notice there's no locality_id here anymore — a real phone only knows GPS
+    coordinates, not which locality it's in. The backend now figures that out.
     """
-    locality_id: int
     category: str
     is_positive: bool
     photo_url: str
@@ -39,6 +38,46 @@ app = FastAPI(title="Civic Aura API")
 
 # Path to the database file — it lives in ../database/civic_aura.db relative to this file.
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "database", "civic_aura.db")
+
+
+def haversine_distance_km(lat1, lng1, lat2, lng2):
+    """
+    Calculates the straight-line distance between two GPS points, in kilometers.
+    This is the standard formula for 'distance on a sphere' (the Earth isn't flat,
+    so we can't just use normal Pythagorean distance on lat/lng).
+    You don't need to understand the math deeply — just know it converts two
+    (lat, lng) points into a distance in km.
+    """
+    R = 6371  # Earth's radius in km
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def find_nearest_locality(conn, lat, lng):
+    """
+    Looks at every locality, calculates how far away each one's center is from
+    the given GPS point, and returns the closest one — but ONLY if that point
+    actually falls within that locality's radius_km. Otherwise returns None
+    (meaning: this report isn't inside any locality we track yet).
+    """
+    localities = conn.execute("SELECT * FROM localities").fetchall()
+
+    best_match = None
+    best_distance = None
+
+    for loc in localities:
+        distance = haversine_distance_km(lat, lng, loc["center_lat"], loc["center_lng"])
+        if distance <= loc["radius_km"]:
+            if best_distance is None or distance < best_distance:
+                best_match = loc
+                best_distance = distance
+
+    return best_match
 
 
 def get_db_connection():
@@ -123,18 +162,16 @@ def get_leaderboard():
 def create_report(report: ReportIn):
     """
     Saves a new report and updates the locality's Aura.
-    NOTE: no AI moderation or duplicate check yet — that comes in Phases 6 and 7.
-    For now this just proves the full read-and-write cycle works end to end.
+    NEW in Phase 5: figures out the locality from lat/lng automatically,
+    instead of trusting a locality_id sent by the client.
+    NOTE: still no AI moderation or duplicate check yet — that's Phases 6 and 7.
     """
     conn = get_db_connection()
 
-    # Make sure the locality actually exists before we do anything else.
-    locality = conn.execute(
-        "SELECT * FROM localities WHERE id = ?", (report.locality_id,)
-    ).fetchone()
+    locality = find_nearest_locality(conn, report.lat, report.lng)
     if locality is None:
         conn.close()
-        return {"error": f"No locality found with id {report.locality_id}"}
+        return {"error": "This location isn't inside any locality we track yet."}
 
     # 1. Insert the report itself, marked 'approved' for now (Phase 6 will make this conditional).
     cursor = conn.execute(
@@ -142,7 +179,7 @@ def create_report(report: ReportIn):
         INSERT INTO reports (locality_id, category, is_positive, photo_url, lat, lng, status)
         VALUES (?, ?, ?, ?, ?, ?, 'approved')
         """,
-        (report.locality_id, report.category, report.is_positive, report.photo_url, report.lat, report.lng),
+        (locality["id"], report.category, report.is_positive, report.photo_url, report.lat, report.lng),
     )
     report_id = cursor.lastrowid
 
@@ -150,12 +187,12 @@ def create_report(report: ReportIn):
     change = 1 if report.is_positive else -1
     new_aura = max(0, locality["aura"] + change)
 
-    conn.execute("UPDATE localities SET aura = ? WHERE id = ?", (new_aura, report.locality_id))
+    conn.execute("UPDATE localities SET aura = ? WHERE id = ?", (new_aura, locality["id"]))
 
     # 3. Log the change in aura_history so we have a running record.
     conn.execute(
         "INSERT INTO aura_history (locality_id, report_id, change, new_total) VALUES (?, ?, ?, ?)",
-        (report.locality_id, report_id, change, new_aura),
+        (locality["id"], report_id, change, new_aura),
     )
 
     conn.commit()
